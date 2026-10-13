@@ -11,17 +11,17 @@ Skills usadas em todos os projetos. Toda skill de terceiros entra **só depois d
 
 ## Instalar
 
-**No PC (vale para todos os projetos)** — no terminal:
+**No PC (vale para todos os projetos)** — no **PowerShell**:
 ```
-git clone https://github.com/augustopegorim/skills.git %USERPROFILE%\.claude\skills
+git clone https://github.com/augustopegorim/skills.git "$env:USERPROFILE\.claude\skills"
 ```
-(Linux/Zima: `git clone https://github.com/augustopegorim/skills.git ~/.claude/skills`.)
+(No Prompt de Comando/cmd o caminho é `%USERPROFILE%\.claude\skills`; no Linux/Zima, `~/.claude/skills`.)
 Se a pasta `skills` já existir, clone em outro lugar e copie as pastas para dentro dela.
 
 **Python (só para o `skill-security-auditor`):** no Windows, `winget install -e --id Python.Python.3.12`;
 depois confira com `py -3 --version` (o comando `python3` do Windows abre a Microsoft Store — não use).
 
-**Atualizar:** `git -C ~/.claude/skills pull` (no Windows: `git -C %USERPROFILE%\.claude\skills pull`).
+**Atualizar (PowerShell):** `git -C "$env:USERPROFILE\.claude\skills" pull` (Linux/Zima: `git -C ~/.claude/skills pull`).
 
 **Só num projeto:** copie a pasta da skill para `.claude/skills/` do repositório do projeto.
 
