@@ -9,6 +9,8 @@ Skills usadas em todos os projetos. Toda skill de terceiros entra **só depois d
 | `adversarial-reviewer` | `/adversarial-reviewer` | Revisão "hostil" do código antes de publicar |
 | `skill-security-auditor` | `/skill-security-auditor <pasta ou link>` | Auditar skill/plugin de terceiros antes de instalar (precisa de Python 3) |
 | `claude-automation-recommender` | `/claude-automation-recommender` | Analisa um projeto e sugere automações do Claude Code (hooks, skills, subagentes, MCP); só lê, não altera nada. Rodar uma vez por projeto |
+| `publicar` | `/publicar` | **Projeto Patrimônio:** do código pronto ao sistema no ar (conferir, testar, diário, commit, push, deploy, verificar, relatório). Só o Augusto chama |
+| `novo-teste` | `/novo-teste` | **Projeto Patrimônio:** cria teste de API/tela (inclusive em tela de celular) no padrão de `zima/testes`, com modelo pronto e as lições aprendidas |
 
 ## Instalar
 
