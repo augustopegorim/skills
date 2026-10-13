@@ -19,6 +19,11 @@ clear **PASS / WARN / FAIL** verdict with findings and remediation guidance.
 
 ## Quick Start
 
+> **Como rodar (Pegorim):** use o caminho completo do script, dentro da pasta desta skill
+> (`~/.claude/skills/skill-security-auditor/scripts/...` ou `.claude/skills/...` do projeto).
+> **Windows:** troque `python3` por `py -3` — o `python3` do Windows é só um atalho para a Microsoft Store.
+> Sem Python instalado: `winget install -e --id Python.Python.3.12` e abra um terminal novo.
+
 ```bash
 # Audit a local skill directory
 python3 scripts/skill_security_auditor.py /path/to/skill-name/

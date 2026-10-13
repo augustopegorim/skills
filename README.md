@@ -18,6 +18,9 @@ git clone https://github.com/augustopegorim/skills.git %USERPROFILE%\.claude\ski
 (Linux/Zima: `git clone https://github.com/augustopegorim/skills.git ~/.claude/skills`.)
 Se a pasta `skills` já existir, clone em outro lugar e copie as pastas para dentro dela.
 
+**Python (só para o `skill-security-auditor`):** no Windows, `winget install -e --id Python.Python.3.12`;
+depois confira com `py -3 --version` (o comando `python3` do Windows abre a Microsoft Store — não use).
+
 **Atualizar:** `git -C ~/.claude/skills pull` (no Windows: `git -C %USERPROFILE%\.claude\skills pull`).
 
 **Só num projeto:** copie a pasta da skill para `.claude/skills/` do repositório do projeto.
