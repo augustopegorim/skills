@@ -8,6 +8,7 @@ Skills usadas em todos os projetos. Toda skill de terceiros entra **só depois d
 | `checkup-seguranca` | `/checkup-seguranca` | Checkup de segurança completo ao terminar um app (lista + `varredura.sh`) |
 | `adversarial-reviewer` | `/adversarial-reviewer` | Revisão "hostil" do código antes de publicar |
 | `skill-security-auditor` | `/skill-security-auditor <pasta ou link>` | Auditar skill/plugin de terceiros antes de instalar (precisa de Python 3) |
+| `claude-automation-recommender` | `/claude-automation-recommender` | Analisa um projeto e sugere automações do Claude Code (hooks, skills, subagentes, MCP); só lê, não altera nada. Rodar uma vez por projeto |
 
 ## Instalar
 
