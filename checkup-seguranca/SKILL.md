@@ -62,7 +62,7 @@ node <pasta-desta-skill>/rotas.js http://localhost:PORTA <raiz-do-app> --publica
 - Sem login, toda rota precisa dar 401/403. Cada exceção vira **pergunta ao dono**: "esta rota é pública de propósito?" (entrada, link de assinatura, agentes com token próprio…). Rota pública não revisada = FALHA.
 - `--baixo` (usuário de poucas permissões): conferir cada rota de administração/financeiro/usuários que ele alcança.
 - `--logado`: erro 5xx com corpo vazio = rota quebrada ou vazando erro.
-- Se o projeto tiver teste próprio de rotas/telas (no Patrimônio: `zima/teste-completo.sh 130`), use-o e confira também que ele está atualizado.
+- Se o projeto tiver teste próprio de rotas/telas (no Patrimônio: `zima/teste-completo.sh 999`), use-o e confira também que ele está atualizado.
 
 ## 2c. Passeio por TODAS as telas (navegador de teste, tamanho de celular)
 Abrir cada tela (menu, abas, fichas de cliente/equipamento/chamado/orçamento/venda, telas de admin) logado e conferir: **(a)** sem erro de JavaScript; **(b)** sem violação de CSP no console; **(c)** texto malicioso (`"><img src=x onerror=...>`, `<svg onload=...>`, `<script>`) digitado em nome/observação/endereço/assunto **não** vira HTML nem script em nenhuma tela; **(d)** tela sem login mostra só a entrada; **(e)** sem rolagem horizontal. Usar o Playwright do `.mcp.json` ou o Chromium dos testes.
