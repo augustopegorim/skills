@@ -2,10 +2,11 @@
 # Varredura automática do checkup de segurança. Uso: bash varredura.sh [pasta-do-app]   (padrão: pasta atual)
 # Cada bloco impresso é SUSPEITA, não falha: abra só a linha apontada e decida.
 cd "${1:-.}" || exit 1
+# LIMITE=n muda quantos achados aparecem por bloco (padrão 60; se um bloco chegar no limite, rode de novo com LIMITE maior)
 # Documentação (*.md) só entra na busca de segredos (gs); o resto olha só código.
 X=(--exclude="*.md"); gs(){ X=(); g "$@"; X=(--exclude="*.md"); }
 g(){ t="$1"; shift; r=$(grep -rnEI "${X[@]}" --exclude-dir={node_modules,.git,dist,build,vendor,coverage,.next} \
-  --exclude={*.min.js,package-lock.json,yarn.lock,go.sum,*.map,SKILL.md,varredura.sh} "$@" . 2>/dev/null | cut -c1-180 | head -20)
+  --exclude={*.min.js,package-lock.json,yarn.lock,go.sum,*.map,SKILL.md,varredura.sh} "$@" . 2>/dev/null | cut -c1-180 | head -${LIMITE:-60})
   [ -n "$r" ] && printf '\n== %s\n%s\n' "$t" "$r"; }
 g "SQL montado com texto (injeção)"  '\.(prepare|query|exec|run|all|get|raw)\(\s*`[^`]*\$\{'
 g "SQL concatenado"                  "(SELECT|INSERT|UPDATE|DELETE|WHERE|ORDER BY)[^;]*[\"'\`]\s*\+\s*\w"
@@ -35,7 +36,19 @@ g "target=_blank"                    'target=["'"'"']_blank'
 g "Rotas de debug/teste"             "app\.(get|post|use)\(['\"]/(debug|test|dev|teste|phpinfo|_)"
 echo; echo "== Arquivos sensíveis versionados"; git ls-files 2>/dev/null | grep -Ei '(^|/)\.env($|\.)|\.(pem|key|p12|pfx|jks|keystore|sqlite3?|db|bak|dump)$|id_rsa|credentials' | head
 echo "== .gitignore cobre .env?"; grep -qE '^\.env' .gitignore 2>/dev/null && echo sim || echo "NÃO"
+echo; echo "== Container / servidor (Dockerfile, compose)"
+for f in $(git ls-files 2>/dev/null | grep -E '(^|/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml)$'); do
+  grep -HnE 'docker\.sock|privileged:\s*true|network_mode:\s*host|:latest|0\.0\.0\.0:|^\s*-\s*"?[0-9]+:[0-9]+"?' "$f" | cut -c1-160
+  grep -q '^USER ' "$f" || case "$f" in *Dockerfile*) echo "$f: sem USER (roda como root? confira entrypoint)";; esac
+  case "$f" in *compose*) grep -q 'no-new-privileges' "$f" || echo "$f: sem security_opt no-new-privileges";; esac
+done
+echo "== Android (manifest)"
+for f in $(git ls-files 2>/dev/null | grep -E 'AndroidManifest\.xml$'); do grep -HnE 'debuggable="true"|allowBackup="true"|usesCleartextTraffic="true"|exported="true"' "$f" | cut -c1-160; done
+echo "== Scripts .sh / Go: segredo, curl inseguro, comando com variável"
+grep -rnEI --include=*.sh --include=*.go --exclude-dir={node_modules,.git,dist} 'curl[^|]*(-k|--insecure)|wget[^|]*--no-check-certificate|InsecureSkipVerify|chmod\s+(-R\s+)?777|eval "\$' . 2>/dev/null | cut -c1-160 | head -20
+echo "== Arquivos de exceção do gitleaks"; ls .gitleaksignore .gitleaks.toml 2>/dev/null || echo "nenhum (falsos positivos vão reaparecer)"
 [ -f package.json ] && { echo "== npm audit"; npm audit --omit=dev --audit-level=high 2>&1 | grep -vi "npm notice" | tail -15; }
-[ -f go.mod ] && command -v govulncheck >/dev/null && { echo "== govulncheck"; govulncheck ./... 2>&1 | tail -15; }
+command -v govulncheck >/dev/null || echo "!! govulncheck NÃO instalado — checagem das bibliotecas Go foi PULADA"; command -v gitleaks >/dev/null || echo "!! gitleaks NÃO instalado — checagem de segredos no histórico foi PULADA"
+for gm in $(git ls-files 2>/dev/null | grep 'go\.mod$'); do command -v govulncheck >/dev/null && { echo "== govulncheck ($gm) — GOOS=windows para agentes de Windows"; (cd "$(dirname "$gm")" && GOOS=windows govulncheck ./... 2>&1 | tail -15); }; done
 command -v gitleaks >/dev/null && { echo "== gitleaks (histórico)"; gitleaks detect --no-banner -v 2>&1 | tail -15; }
 exit 0

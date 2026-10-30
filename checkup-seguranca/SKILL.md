@@ -14,14 +14,14 @@ Foi escrita para o Claude seguir sozinho, gastando poucos tokens. Serve para qua
 
 1. **Escopo**: defina a pasta do app e a URL pública (se houver). Se for só uma mudança, cheque apenas as
    seções que a mudança toca; app novo ou mudança grande → checkup completo.
-2. **Primeiro a varredura automática (seção 1)**, num único comando. Ela aponta os arquivos suspeitos;
+2. **Primeiro a varredura automática (seção 1)** — se `gitleaks`/`govulncheck` não estiverem instalados, o resultado diz isso: instale (`go install github.com/zricethezav/gitleaks/v8@latest`, `go install golang.org/x/vuln/cmd/govulncheck@latest`) em vez de pular. Agentes Go de Windows: `GOOS=windows govulncheck ./...`, num único comando. Ela aponta os arquivos suspeitos;
    leia **só** as linhas apontadas (com offset/limit), nunca o projeto inteiro.
-3. **Depois os testes externos (seção 2)**, se o app estiver no ar.
-4. Percorra as seções 3 a 24. Para cada item marque: **OK** / **FALHA** / **N/A** (não se aplica a este app),
+3. **Depois os testes externos (seção 2)**, se o app estiver no ar, **e o passeio por todas as rotas e telas (2b e 2c)**.
+4. Percorra as seções 3 a 24 (incluindo 23b). Para cada item marque: **OK** / **FALHA** / **N/A** (não se aplica a este app),
    sempre com evidência curta (`arquivo:linha` ou saída do comando). Não marque OK "de cabeça".
 5. **Gravidade**: Crítico (vaza dados/acesso sem login) · Alto (explorável com algum esforço) · Médio
    (defesa em profundidade faltando) · Baixo (boa prática).
-6. **Crítico e Alto: corrigir antes de publicar.** Médio/Baixo: corrigir se for simples; senão, vira pendência.
+6. **Crítico e Alto: corrigir antes de publicar.** Rodar o checkup e não corrigir/registrar nada é falha da rodada. Falso positivo conhecido (ex.: senha de teste em script) vai para um arquivo de exceções (`.gitleaksignore`) com o motivo, para o próximo checkup não repetir. Médio/Baixo: corrigir se for simples; senão, vira pendência.
 7. Entregue o relatório no formato da seção 25 e registre as pendências no diário/lista de pendências do projeto (ex.: `docs/ESTADO-DO-SISTEMA.md`).
 8. **Levar para outro projeto**: copie a pasta `checkup-seguranca` (SKILL.md + varredura.sh) para `.claude/skills/` do
    outro repositório, ou para `~/.claude/skills/` no PC para valer em todos os projetos. Chame com `/checkup-seguranca`.
@@ -53,6 +53,20 @@ echo | openssl s_client -connect "$H:443" -servername "$H" 2>/dev/null | openssl
 ```
 Sem acesso à internet: rode contra `http://localhost:PORTA` e cheque os headers do mesmo jeito.
 Opcional (navegador): securityheaders.com e ssllabs.com/ssltest.
+
+## 2b. Passeio por TODAS as rotas (obrigatório em checkup completo)
+O checkup não vale se não passar por cada rota e cada tela. Rode contra uma **cópia de teste** (banco descartável), nunca contra produção:
+```bash
+node <pasta-desta-skill>/rotas.js http://localhost:PORTA <raiz-do-app> --publicas=/a,/b --baixo="sid=..." --logado="sid=..."
+```
+- Sem login, toda rota precisa dar 401/403. Cada exceção vira **pergunta ao dono**: "esta rota é pública de propósito?" (entrada, link de assinatura, agentes com token próprio…). Rota pública não revisada = FALHA.
+- `--baixo` (usuário de poucas permissões): conferir cada rota de administração/financeiro/usuários que ele alcança.
+- `--logado`: erro 5xx com corpo vazio = rota quebrada ou vazando erro.
+- Se o projeto tiver teste próprio de rotas/telas (no Patrimônio: `zima/teste-completo.sh 130`), use-o e confira também que ele está atualizado.
+
+## 2c. Passeio por TODAS as telas (navegador de teste, tamanho de celular)
+Abrir cada tela (menu, abas, fichas de cliente/equipamento/chamado/orçamento/venda, telas de admin) logado e conferir: **(a)** sem erro de JavaScript; **(b)** sem violação de CSP no console; **(c)** texto malicioso (`"><img src=x onerror=...>`, `<svg onload=...>`, `<script>`) digitado em nome/observação/endereço/assunto **não** vira HTML nem script em nenhuma tela; **(d)** tela sem login mostra só a entrada; **(e)** sem rolagem horizontal. Usar o Playwright do `.mcp.json` ou o Chromium dos testes.
+Pelo menos 1 vez por checkup: repetir os testes da seção 2 **contra o site real** (pela internet, passando pelo Cloudflare) e, se houver proteção por VPN/IP, com ela ligada e desligada.
 
 ---
 
@@ -241,6 +255,14 @@ Opcional (navegador): securityheaders.com e ssllabs.com/ssltest.
 - [ ] **G5** Acesso a dados pessoais registrado; plano para comunicar vazamento (ANPD/titulares).
 - [ ] **G6** Fornecedores que recebem dados (nuvem, IA, e-mail) listados e com contrato adequado.
 
+## 23b. Dados fiscais, certificados e recursos de rede local
+- [ ] **Z1** Certificado digital (A1/PFX) e a senha dele: guardados **criptografados**, nunca em log, resposta de API, e-mail ou backup sem criptografia; só o dono do módulo fiscal baixa/troca; troca registrada na auditoria.
+- [ ] **Z2** Notas/XML fiscais: valores e impostos calculados no servidor; cancelamento exige permissão + motivo e fica registrado; teste só contra servidor falso/homologação.
+- [ ] **Z3** Recurso que **precisa** falar com IP da rede local (impressora, câmera, DVR, agente): aceitar só faixa privada (10.*, 172.16–31.*, 192.168.*), porta fixa da lista, sem `localhost`/`169.254.*`/IP público, sem seguir redirecionamento, com timeout. (É o contrário do bloqueio de I6, que vale para URLs livres.)
+- [ ] **Z4** Dado restrito (custo, lucro, margem, senhas de rede) **nunca** em documento entregue ao cliente (PDF, RAT, orçamento, comprovante, link público). Conferir cada PDF/rota pública com busca por esses campos.
+- [ ] **Z5** Seletor de contexto enviado pelo navegador (cabeçalho/parâmetro de empresa, filial, cliente): o servidor confere se o **usuário tem direito** a ele; trocar o valor à mão não pode abrir dados de outro.
+- [ ] **Z6** Envio de WhatsApp/e-mail/SMS e links públicos: limite por destinatário e por hora (evita virar spam/gasto), sem texto livre do atacante no corpo.
+
 ## 24. Itens específicos por tipo de app
 **Links públicos / webhooks / integrações**
 - [ ] **W1** Link público (assinatura, compartilhamento) com token aleatório ≥ 128 bits, expiração, uso limitado e revogável; mostra só o mínimo.
@@ -269,7 +291,7 @@ Opcional (navegador): securityheaders.com e ssllabs.com/ssltest.
 
 ```
 Checkup de segurança — <app> — <data>
-Escopo: <completo | seções X,Y>   Varredura: <ok/erros>   Testes externos: <feito | N/A motivo>
+Escopo: <completo | seções X,Y>   Varredura: <ok/erros>   Testes externos: <feito | N/A motivo>   Rotas: <n testadas>   Telas: <n testadas>
 
 FALHAS (corrigir):
 - [Crítico] P3 IDOR em GET /api/x/:id — routes.js:120 — corrigido em <commit> | pendente
