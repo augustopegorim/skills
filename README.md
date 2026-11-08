@@ -11,6 +11,7 @@ Skills usadas em todos os projetos. Toda skill de terceiros entra **só depois d
 | `claude-automation-recommender` | `/claude-automation-recommender` | Analisa um projeto e sugere automações do Claude Code (hooks, skills, subagentes, MCP); só lê, não altera nada. Rodar uma vez por projeto |
 | `publicar` | `/publicar` | **Projeto Patrimônio:** do código pronto ao sistema no ar (conferir, testar, diário, commit, push, deploy, verificar, relatório). Só o Augusto chama |
 | `novo-teste` | `/novo-teste` | **Projeto Patrimônio:** cria teste de API/tela (inclusive em tela de celular) no padrão de `zima/testes`, com modelo pronto e as lições aprendidas |
+| `guarda-de-arquivos` | `/guarda-de-arquivos` | **Qualquer sistema Node/Express que recebe arquivo:** guarda que lê foto, PDF, áudio, Office, XML, texto, certificado e CAD num processo isolado e descarta o que tiver algo além do esperado (módulo pronto em `modulo/`, com testes) |
 
 ## Instalar
 
