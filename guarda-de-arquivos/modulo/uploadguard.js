@@ -34,7 +34,7 @@ function init({ db = null, UPLOADS = '', filecrypt = { readFile: p => fs.readFil
       try {
         child = fork(WORKER, [], {
           execArgv: ['--permission', `--allow-fs-read=${WORKER}`, `--allow-fs-read=${path.join(__dirname, 'uploadguard-core.js')}`, `--allow-fs-read=${path.join(__dirname, 'uploadguard-docs.js')}`, `--allow-fs-read=${path.join(__dirname, 'uploadguard-util.js')}`, `--allow-fs-read=${path.join(__dirname, 'uploadguard-nfe-tags.js')}`,
-            '--max-old-space-size=512', '--no-experimental-fetch', '--disable-proto=delete'],
+            '--max-old-space-size=512', '--no-experimental-fetch', '--no-experimental-websocket', '--disallow-code-generation-from-strings', '--disable-proto=delete'],
           env: {}, cwd: __dirname, serialization: 'advanced', stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true,
         });
       } catch (e) { return fin({ ok: false, reason: 'verificador de segurança indisponível' }); }

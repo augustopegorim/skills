@@ -21,10 +21,10 @@ Atalhos (`PRESETS` em `uploadguard-core.js`): `fotos`, `fotos_audio`, `comprovan
 
 ## O que cada leitor recusa (resumo)
 - **Imagens:** dados depois do fim, bloco desconhecido, CRC quebrado, bomba de descompressão, imagem gigante, código/EXE/ZIP/PDF escondido em comentário/EXIF/texto.
-- **PDF:** JavaScript (inclusive `/Java#53cript` e dentro de objetos comprimidos), Launch, arquivo embutido, XFA, SubmitForm, GoToR, criptografado, dados antes do cabeçalho ou depois do `%%EOF`.
-- **Office moderno/ODF:** macro (`vbaProject`), objeto embutido, programa/script, caminho `../`, modelo/objeto externo (inclusive UNC/`file:`), ZIP com dados escondidos/bomba/senha. **Office antigo:** macro VBA, objeto OLE, tamanho fora do padrão. **RTF:** `\objdata` e afins.
+- **PDF:** JavaScript (inclusive `/Java#53cript` e dentro de objetos comprimidos), Launch, arquivo embutido, XFA, SubmitForm, GoToR, criptografado, dados antes do cabeçalho ou depois do `%%EOF`; **imagens**: cada JPEG (DCTDecode) é conferido como foto, imagem Flate que explode é recusada, **JBIG2 e JPEG2000 são recusados** (decodificadores com histórico de falhas graves).
+- **Office moderno/ODF:** macro (`vbaProject`, `macrosheets/`), objeto embutido, programa/script, caminho `../`, modelo/objeto externo (inclusive UNC/`file:`), ZIP com dados escondidos/bomba/senha. **Office antigo:** macro VBA, objeto OLE, tamanho fora do padrão, e no **xls** lê o fluxo Workbook (inclusive mini fluxo) e recusa folha de macro do Excel 4, módulo VBA e planilha com senha. **RTF:** `\objdata` e afins.
 - **XML:** DOCTYPE/entidades (XXE, "bilhões de risadas"), CDATA, comentários, instruções, namespace/elemento/atributo fora do esperado, profundidade/tamanho. **SVG:** só formas (sem script, evento, link externo, `foreignObject`, `image`).
-- **Áudio:** dados no fim, etiqueta com código, WebM com `Attachments`, CRC do OGG, quadros inválidos. **Certificado:** estrutura ASN.1 completa e sem sobra. **CAD:** DXF com linhas fora do par código/valor, sem EOF, ou código escondido.
+- **Áudio:** dados no fim, etiqueta com código, WebM com `Attachments`, CRC do OGG, quadros inválidos; **FLAC conferido quadro a quadro (CRC-8/CRC-16)**; MP3/AAC sem último quadro cortado; **MP4/WebM com faixa de vídeo são recusados** (áudio é áudio). **Certificado:** estrutura ASN.1 completa e sem sobra. **CAD:** DXF com linhas fora do par código/valor, sem EOF, ou código escondido.
 
 ## Como instalar num sistema novo (Node ≥ 22.13, Express)
 1. Copie `modulo/uploadguard*.js` para a raiz do sistema. (`uploadguard-nfe-tags.js` só serve para NF-e brasileira; em outro sistema pode ficar vazio: `module.exports = { elements: [], attributes: [] };`.)
@@ -46,15 +46,15 @@ Atalhos (`PRESETS` em `uploadguard-core.js`): `fotos`, `fotos_audio`, `comprovan
 
 ## Lições aprendidas (leia antes de ligar em produção)
 - **Fotos de celular têm EXIF com orientação.** Por isso a foto regravada mantém um EXIF mínimo só com a rotação; sem isso as fotos aparecem deitadas.
-- **Foto em movimento (Samsung/Google) tem vídeo colado depois do fim do JPEG** e será recusada por "dados depois do fim". É proposital; o usuário deve desligar o recurso ou enviar captura.
+- **Foto em movimento (Samsung/Google)** tem vídeo MP4 colado depois do fim do JPEG (e, no Samsung, um bloco `SEFH…SEFT`). A guarda **aceita**: confere o vídeo e o bloco, **descarta os dois** e guarda só a foto. Qualquer outra coisa depois do fim do JPEG continua recusada. O formato Samsung SEF foi montado de memória e testado com arquivo sintético: se uma foto real for recusada, olhe `motionTrailer` em `uploadguard-docs.js`.
 - **Nota/XML de teste simplificado sem `xmlns`** é aceito (nota real sempre tem); elementos continuam conferidos.
 - **NF-e com elemento novo** (reforma tributária) é recusada até rodar `gerar-lista-xml-nfe.js` com os XSD novos.
 - **Teste com arquivo falso quebra**: um "PDF" de teste precisa ter `%%EOF`, um `.docx` precisa ser ZIP de verdade. Use `fixtures-guarda.js`.
-- O isolamento do Node **não bloqueia rede** (o verificador não tem código de rede, mas o contêiner continua em rede). Em ambiente crítico, rode o worker num contêiner sem rede.
+- **Rede:** o Node 22 não tem permissão de rede e muitos contêineres não deixam criar rede vazia (`unshare` bloqueado). O worker bloqueia `net/http/dns/vm/child_process`, remove `process.binding`/`dlopen`, desliga `eval` e `fetch`/WebSocket antes de carregar a guarda (autoteste prova). É **defesa em camadas, não parede**: em ambiente crítico, rode o worker num contêiner com `network_mode: none`.
 - `--allow-fs-read` precisa listar **todos** os arquivos que o worker carrega; arquivo novo na guarda = incluir em `runWorker`.
 
 ## Limites conhecidos (não prometa mais do que isso)
-FLAC/MP3/AAC não têm como provar "nada depois do fim" em todos os casos; AMR aceita enchimento que pareça quadro "sem dados"; macros XLM (Excel 4) em `.xls` não são detectadas; DWG só tem conferência de cabeçalho e tamanho; imagens dentro de PDF e vídeo não são decodificadas (bug em decodificador do navegador continua possível); texto exige que não haja código (um arquivo de suporte com trecho de PHP/script será recusado).
+O servidor **não decodifica** áudio/vídeo/imagem: defeito de decodificador do navegador continua possível (por isso JBIG2/JPEG2000 em PDF são recusados e áudio é conferido por estrutura). Imagens de PDF em CCITT/LZW/RunLength e fontes embutidas não são lidas. DWG: o interior é comprimido e não é lido (só cabeçalho, tamanho e assinaturas longas de programa embutido). Macro em `.doc`/`.ppt` é detectada pelo nome das pastas (VBA/Macros). MP3/AAC baixados pela metade (último quadro cortado) são recusados. Texto com trecho de PHP/script/HTML é recusado mesmo sendo legítimo (scripts de terminal `.sh/.ps1/.bat` passam). A rede é bloqueada só dentro do processo (ver Lições).
 
 ## Como adicionar um tipo novo
 1. `detectDoc` em `uploadguard-docs.js`: reconhecer pelo conteúdo (assinatura de bytes).

@@ -15,7 +15,7 @@ const raw = async (path, buf, method = 'POST') => { const r = await fetch(B + pa
 
 run(async () => {
   const kbId = (await req(ca, 'POST', '/api/kb', { title: 'Guarda de documentos ' + Date.now() % 1e6, solution: 'teste' })).j;
-  const KB = `/api/kb/${kbId.id}/files`;
+  let KB = `/api/kb/${kbId.id}/files`;
   const kb = (name, buf, type = 'application/octet-stream') => send(KB, [['files', name, buf, type]]);
   const good = async (nome, name, buf, type) => { const r = await kb(name, buf, type); ok(r.s === 200, `ACEITO: ${nome} (${r.s}${r.err ? ' ' + r.err.slice(0, 120) : ''})`); return r; };
   const evil = async (nome, name, buf, type, quer) => { const r = await kb(name, buf, type); ok(r.s === 422 && r.j && r.j.rejected && (!quer || quer.test(r.err)), `RECUSADO: ${nome} — ${r.err.slice(0, 120) || r.s}`); };
@@ -33,7 +33,9 @@ run(async () => {
     } catch (e) { out.audioErr = String(e); }
     return out;
   });
-  const pdfChrome = Buffer.from(await pg.pdf({ format: 'A4' })); await br.close();
+  const pdfChrome = Buffer.from(await pg.pdf({ format: 'A4' }));
+  await pg.setContent(`<img src="data:image/jpeg;base64,${real.jpeg}" width=300><img src="data:image/png;base64,${real.png}" width=200>`); await wait(300);
+  const pdfComFoto = Buffer.from(await pg.pdf({ format: 'A4' })); await br.close();
   const { PDFDocument } = require('/app/node_modules/pdf-lib');
   const pl = await PDFDocument.create(); pl.addPage([200, 200]).drawText('pdf-lib com objetos comprimidos'); const pdfLib = Buffer.from(await pl.save({ useObjectStreams: true }));
   const bin = k => Buffer.from(real[k], 'base64');
@@ -47,6 +49,7 @@ run(async () => {
     ok(r.s === 200, `nota de voz GRAVADA PELO NAVEGADOR (${real.audioType}, ${bin('audio').length} bytes) passa pela guarda (${r.s} ${r.err.slice(0, 120)})`);
   } else ok(true, 'AVISO: o Chromium do teste não gravou áudio (' + real.audioErr + '): gravação real não testada neste ambiente');
   await good('PDF gerado pelo Chromium', 'chromium.pdf', pdfChrome, 'application/pdf');
+  await good('PDF do Chromium COM FOTO JPEG e PNG dentro (imagens conferidas)', 'comfoto.pdf', pdfComFoto, 'application/pdf');
   await good('PDF do pdf-lib (com objetos comprimidos)', 'pdflib.pdf', pdfLib, 'application/pdf');
 
   // ================= todos os tipos, montados à mão =================
@@ -116,6 +119,32 @@ run(async () => {
   r = await raw('/api/cad/drawings?name=guarda.dwg', F.DWG); ok(r.s === 200, 'DWG válido é aceito no Desenho CAD (' + r.s + ')');
   r = await raw('/api/cad/drawings?name=mau.dxf', Buffer.from(F.DXF.toString().replace('LINE', '<?php system(1) ?>'))); ok(r.s === 400 && /recusado por segurança/.test(r.err), 'DXF com código escondido é RECUSADO: ' + r.err.slice(0, 80));
   r = await raw('/api/cad/drawings?name=mau.dwg', Buffer.concat([Buffer.from('MZ'), Buffer.alloc(300, 1)])); ok(r.s === 400, 'EXE com nome .dwg é RECUSADO');
+
+  KB = `/api/kb/${(await req(ca, 'POST', '/api/kb', { title: 'Guarda 2 ' + Date.now() % 1e6, solution: 'teste' })).j.id}/files`; // outro artigo (cada um aceita até 20 arquivos)
+  // ================= limites fechados (imagens em PDF, áudio sem vídeo, macros antigas, foto em movimento, rede) =================
+  await evil('PDF com imagem JBIG2', 'jbig2.pdf', F.pdfImg('/Filter /JBIG2Decode', Buffer.from('xx')), 'application/pdf', /JBIG2/);
+  await evil('PDF com imagem JPEG2000', 'jpx.pdf', F.pdfImg('/Filter /JPXDecode', Buffer.from('xx')), 'application/pdf', /JPEG2000/);
+  await evil('PDF com JPEG que esconde programa no fim', 'dct.pdf', F.pdfImg('/Filter /DCTDecode', Buffer.concat([F.JPG, Buffer.from('MZ\x90\0 This program cannot be run in DOS mode')])), 'application/pdf', /JPEG dentro do PDF/);
+  await evil('PDF com imagem que explode ao descomprimir', 'bomba.pdf', F.pdfImg('/Filter /FlateDecode', require('zlib').deflateSync(Buffer.alloc(100 * 1024 * 1024))), 'application/pdf', /bomba/);
+  await good('PDF com imagem JPEG de verdade (conferida)', 'imagem.pdf', F.pdfImg('/Filter /DCTDecode', F.JPG), 'application/pdf');
+  await evil('Excel antigo com folha de macro (Excel 4/XLM)', 'xlm.xls', F.XLS({ macro: true }), 'application/vnd.ms-excel', /macro/);
+  await evil('Excel antigo com folha de macro (planilha pequena)', 'xlm2.xls', F.XLS({ macro: true, mini: true }), 'application/vnd.ms-excel', /macro/);
+  await good('Excel antigo comum (planilha grande e pequena)', 'ok.xls', F.XLS(), 'application/vnd.ms-excel'); await good('Excel antigo pequeno', 'ok2.xls', F.XLS({ mini: true }), 'application/vnd.ms-excel');
+  await evil('Excel moderno com folha de macro', 'xlm.xlsx', F.DOCX([['xl/macrosheets/sheet1.xml', '<x/>']]), 'application/octet-stream', /macro/);
+  await evil('"áudio" M4A com faixa de VÍDEO', 'video.m4a', F.MP4(Buffer.alloc(0), 'vide'), 'audio/mp4', /vídeo/);
+  await evil('"áudio" WebM com faixa de VÍDEO', 'video.webm', F.WEBM(Buffer.alloc(0), true, 1), 'audio/webm', /vídeo/);
+  await evil('FLAC com dados escondidos depois do último quadro', 'x.flac', Buffer.concat([F.FLAC(), Buffer.from('MZ evil payload data')]), 'audio/flac', /FLAC/);
+  await evil('MP3 com último quadro cortado/escondido', 'x2.mp3', F.MP3().subarray(0, 1000), 'audio/mpeg', /incompleto/);
+  r = await send(P, [['files', 'motion.jpg', F.motion({ sef: true }), 'image/jpeg']]);
+  ok(r.s === 200, 'FOTO EM MOVIMENTO (Samsung/Google: JPEG + vídeo MP4 + bloco SEF) é aceita (' + r.s + ' ' + r.err.slice(0, 80) + ')');
+  const mf = D.prepare("SELECT filename FROM attachments WHERE item_id = ? AND kind = 'location' ORDER BY id DESC LIMIT 1").get(it.id).filename;
+  const mb = Buffer.from(await (await fetch(B + '/files/' + mf, { headers: { cookie: ca } })).arrayBuffer());
+  ok(mb.length < F.motion({ sef: true }).length - 100 && !mb.includes('SEFT') && !mb.includes(Buffer.from('ftyp')) && mb.subarray(-2).equals(Buffer.from([0xff, 0xd9])), 'da foto em movimento só fica a FOTO (o vídeo e o bloco SEF são descartados): ' + mb.length + ' bytes');
+  r = await send(P, [['files', 'motion-mau.jpg', F.motion({ mp4: F.MP4(F.box('udta', Buffer.from('<script>alert(1)</script>')), 'vide') }), 'image/jpeg']]);
+  ok(r.s === 422 && /script/.test(r.err), 'foto em movimento com script escondido no vídeo é RECUSADA: ' + r.err.slice(0, 80));
+  r = await send(P, [['files', 'jpeg-php.jpg', Buffer.concat([F.JPG, Buffer.from('<?php system($_GET[1]); ?>')]), 'image/jpeg']]); ok(r.s === 422, 'JPEG com PHP colado no fim continua RECUSADO');
+  const sf2 = (await req(ca, 'POST', '/api/uploadguard/selftest', {})).j;
+  ok(sf2.ok === true && sf2.rede === true && sf2.rede_http === true && sf2.dns === true && sf2.eval === true && sf2.sem_atalhos === true, 'o verificador não tem rede (TCP, HTTP, DNS), eval nem atalhos internos: ' + JSON.stringify(sf2));
 
   // ================= registro das recusas e sistema de pé =================
   const rj = (await req(ca, 'GET', '/api/uploadguard')).j;

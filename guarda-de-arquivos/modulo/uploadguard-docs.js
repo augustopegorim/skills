@@ -6,14 +6,15 @@
 const zlib = require('zlib');
 const { Bad, bad, scanOrBad, scanSig } = require('./uploadguard-util.js');
 
+const hooks = {}; // o núcleo entrega aqui o leitor de JPEG (para conferir imagens dentro do PDF)
 const ascii = (b, s, e) => b.toString('latin1', s, e);
 const u24 = (b, o) => (b[o] << 16) | (b[o + 1] << 8) | b[o + 2];
 
 // ============================== PDF ==============================
 // Não reconstrói (um PDF assinado digitalmente precisa ficar idêntico): confere e recusa o que executa coisas ou carrega arquivos embutidos.
-const PDF_BAD = /\/(JavaScript|Launch|EmbeddedFiles?|RichMedia|XFA|SubmitForm|ImportData|GoToR|GoToE|Encrypt|Rendition|Movie|Sound|FileAttachment|3D)\b/;
+const PDF_BAD = /\/(JavaScript|Launch|EmbeddedFiles?|RichMedia|XFA|SubmitForm|ImportData|GoToR|GoToE|Encrypt|Rendition|Movie|Sound|FileAttachment|3D|JBIG2Decode|JPXDecode)\b/;
 const PDF_BAD_SHORT = /\/(?:JS|AA)\s*(?:[(<\[\/]|\d+\s+\d+\s+R)/;
-const PDF_NAMES = { JavaScript: 'JavaScript', Launch: 'comando de abrir programa (Launch)', EmbeddedFile: 'arquivo embutido', EmbeddedFiles: 'arquivo embutido', RichMedia: 'mídia ativa', XFA: 'formulário ativo (XFA)', SubmitForm: 'envio de formulário', ImportData: 'importação de dados', GoToR: 'abrir arquivo externo', GoToE: 'abrir arquivo embutido', Encrypt: 'PDF criptografado (não dá para conferir)', Rendition: 'mídia ativa', Movie: 'filme embutido', Sound: 'som embutido', FileAttachment: 'anexo embutido', '3D': 'objeto 3D' };
+const PDF_NAMES = { JavaScript: 'JavaScript', Launch: 'comando de abrir programa (Launch)', EmbeddedFile: 'arquivo embutido', EmbeddedFiles: 'arquivo embutido', RichMedia: 'mídia ativa', XFA: 'formulário ativo (XFA)', SubmitForm: 'envio de formulário', ImportData: 'importação de dados', GoToR: 'abrir arquivo externo', GoToE: 'abrir arquivo embutido', Encrypt: 'PDF criptografado (não dá para conferir)', Rendition: 'mídia ativa', Movie: 'filme embutido', Sound: 'som embutido', FileAttachment: 'anexo embutido', '3D': 'objeto 3D', JBIG2Decode: 'imagem JBIG2 (decodificador com histórico de falhas graves; reenvie com imagens JPEG)', JPXDecode: 'imagem JPEG2000 (decodificador com histórico de falhas graves; reenvie com imagens JPEG)' };
 function pdfScan(text, where) {
   const t = text.replace(/#([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))); // /Java#53cript também vale
   let m = PDF_BAD.exec(t); if (m) bad(`PDF com ${PDF_NAMES[m[1]] || m[1]} ${where}`);
@@ -36,7 +37,33 @@ function checkPdf(b) {
     if ((total += out.length) > 120 * 1024 * 1024) bad('PDF descomprimido grande demais');
     pdfScan(ascii(out, 0, out.length), 'dentro de objetos comprimidos');
   }
+  pdfImages(b, text);
   return { buf: b };
+}
+// imagens do PDF: cada JPEG (DCTDecode) é conferido byte a byte como foto; imagem comprimida (Flate) não pode expandir além do tamanho possível (bomba)
+function pdfImages(b, text) {
+  let n = 0, i = 0;
+  for (;;) {
+    i = text.indexOf('stream', i); if (i < 0) break;
+    if (text.slice(Math.max(0, i - 3), i) === 'end') { i += 6; continue; }
+    let st = i + 6; if (text[st] === '\r') st++; if (text[st] === '\n') st++;
+    const e = text.indexOf('endstream', st); if (e < 0) bad('PDF com fluxo sem fim');
+    const dict = text.slice(Math.max(0, text.lastIndexOf('obj', i)), i);
+    i = e + 9;
+    if (!/\/Subtype\s*\/Image\b/.test(dict)) continue;
+    if (++n > 5000) bad('PDF com imagens demais');
+    const fm = /\/Filter\s*(\[[^\]]*\]|\/[A-Za-z0-9]+)/.exec(dict), names = fm ? [...fm[1].matchAll(/\/([A-Za-z0-9]+)/g)].map(x => x[1]) : [];
+    let data = b.subarray(st, e); while (data.length && (data[data.length - 1] === 0x0a || data[data.length - 1] === 0x0d)) data = data.subarray(0, data.length - 1);
+    if (names.includes('DCTDecode')) {
+      if (names.length !== 1) bad('imagem do PDF com filtros combinados que não dá para conferir');
+      if (!hooks.jpeg) bad('verificador de JPEG indisponível');
+      try { hooks.jpeg(data, { motion: false }); } catch (err) { if (err instanceof Bad) bad('imagem JPEG dentro do PDF recusada: ' + err.message); throw err; }
+    } else if (names.length === 1 && names[0] === 'FlateDecode') {
+      const w = +(/\/Width\s+(\d+)/.exec(dict) || [])[1], h = +(/\/Height\s+(\d+)/.exec(dict) || [])[1];
+      const cap = Math.min(256 * 1024 * 1024, w > 0 && h > 0 ? w * h * 8 + 65536 : 64 * 1024 * 1024);
+      try { zlib.inflateSync(data, { maxOutputLength: cap }); } catch { bad('imagem do PDF não descomprime ou é maior que o tamanho declarado (bomba de descompressão)'); }
+    }
+  }
 }
 
 // ============================== áudio ==============================
@@ -77,7 +104,7 @@ function checkMp3(b) {
   while (p < b.length) {
     if (b.length - p >= 128 && ascii(b, p, p + 3) === 'TAG' && b.length - p === 128) { scanOrBad(b.subarray(p), 'etiqueta ID3v1 do MP3'); break; }
     const n = mp3Frame(b, p); if (!n) bad(`MP3 com dados que não são áudio (posição ${p}): dados escondidos ou arquivo corrompido`);
-    if (p + n > b.length) { if (frames === 0) bad('MP3 cortado'); p = b.length; frames++; break; } // último quadro cortado: comum, aceito
+    if (p + n > b.length) bad('MP3 com último quadro incompleto (cortado ou com dados escondidos no fim)');
     p += n; frames++;
   }
   if (!frames) bad('MP3 sem áudio');
@@ -102,7 +129,12 @@ function checkOgg(b) {
   return { buf: b };
 }
 const MP4_TOP = new Set(['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide', 'moof', 'mfra', 'sidx', 'styp', 'pdin', 'meta', 'uuid', 'junk', 'udta']);
-function checkMp4(b) {
+function mp4Kids(b, s, e) { const out = []; let p = s; while (p + 8 <= e) { const size = b.readUInt32BE(p); if (size < 8 || p + size > e) break; out.push({ type: ascii(b, p + 4, p + 8), s: p + 8, e: p + size }); p += size; } return out; }
+function mp4Handlers(b, moov) { // tipos de faixa (soun = áudio, vide = vídeo) dentro de moov/trak/mdia/hdlr
+  const h = []; for (const trak of mp4Kids(b, moov.s, moov.e).filter(k => k.type === 'trak')) for (const mdia of mp4Kids(b, trak.s, trak.e).filter(k => k.type === 'mdia')) for (const hd of mp4Kids(b, mdia.s, mdia.e).filter(k => k.type === 'hdlr')) if (hd.e - hd.s >= 12) h.push(ascii(b, hd.s + 8, hd.s + 12));
+  return h;
+}
+function checkMp4(b, o = {}) {
   let p = 0, i = 0, moov = false;
   while (p < b.length) {
     if (p + 8 > b.length) bad('MP4 cortado');
@@ -113,6 +145,7 @@ function checkMp4(b) {
     if (i === 0 && type !== 'ftyp') bad('MP4 sem cabeçalho no início');
     if (!MP4_TOP.has(type)) bad(`caixa MP4 não esperada (${type})`);
     if (type !== 'mdat') scanOrBad(b.subarray(p + hdr, p + size), `caixa ${type} do MP4`, false);
+    if (type === 'moov' && !o.video && mp4Handlers(b, { s: p + hdr, e: p + size }).includes('vide')) bad('MP4 com vídeo (aqui só é aceito áudio)');
     if (type === 'moov' || type === 'moof') moov = true;
     p += size; i++;
   }
@@ -135,6 +168,7 @@ function ebHead(b, p) {
   for (let i = 1; i < sl; i++) { v = (v << 8n) | BigInt(b[q + i]); if (b[q + i] !== 0xff) all = false; }
   return { id, hdr: l + sl, size: all ? -1 : Number(v), unknown: all };
 }
+function ebKids(b, s, e) { const out = []; let p = s; while (p < e) { let h; try { h = ebHead(b, p); } catch { break; } if (h.unknown || p + h.hdr + h.size > e) break; out.push({ id: h.id, s: p + h.hdr, e: p + h.hdr + h.size }); p += h.hdr + h.size; } return out; }
 function checkWebm(b) {
   let h = ebHead(b, 0); if (h.id !== EB.EBML || h.unknown || h.size > 200 || h.hdr + h.size > b.length) bad('cabeçalho WebM inválido');
   const hd = b.subarray(h.hdr, h.hdr + h.size), at = hd.indexOf(Buffer.from([0x42, 0x82])), dt = at >= 0 ? ascii(hd, at + 3, at + 3 + (hd[at + 2] & 0x7f)) : '';
@@ -160,6 +194,7 @@ function checkWebm(b) {
       if (!EB_L1.has(c.id)) bad(`elemento WebM não esperado (0x${c.id.toString(16)})`);
       if (c.id === EB.CLUSTER) { clusters++; if (c.unknown) q = cluster(q + c.hdr, end, true); else { const ce = q + c.hdr + c.size; if (ce > end) bad('WebM cortado'); cluster(q + c.hdr, ce, false); q = ce; } continue; }
       if (c.unknown || q + c.hdr + c.size > end) bad('elemento WebM com tamanho inválido');
+      if (c.id === 0x1654ae6b) for (const te of ebKids(b, q + c.hdr, q + c.hdr + c.size)) if (te.id === 0xae) for (const f of ebKids(b, te.s, te.e)) if (f.id === 0x83 && b[f.s] === 1) bad('WebM com vídeo (aqui só é aceito áudio)');
       if (c.id === 0x1254c367 || c.id === 0x1549a966 || c.id === 0x1043a770) scanOrBad(b.subarray(q + c.hdr, q + c.hdr + c.size), 'metadados do WebM', false);
       q += c.hdr + c.size;
     }
@@ -167,6 +202,29 @@ function checkWebm(b) {
   }
   if (!seg || !clusters) bad('WebM sem áudio');
   return { buf: b };
+}
+const CRC8 = (() => { const t = new Uint8Array(256); for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = c & 0x80 ? ((c << 1) ^ 0x07) & 0xff : (c << 1) & 0xff; t[i] = c; } return t; })();
+const CRC16 = (() => { const t = new Uint16Array(256); for (let i = 0; i < 256; i++) { let c = i << 8; for (let k = 0; k < 8; k++) c = c & 0x8000 ? ((c << 1) ^ 0x8005) & 0xffff : (c << 1) & 0xffff; t[i] = c; } return t; })();
+const crc8 = (b, s, e) => { let c = 0; for (let i = s; i < e; i++) c = CRC8[c ^ b[i]]; return c; };
+const crc16 = (b, s, e) => { let c = 0; for (let i = s; i < e; i++) c = ((c << 8) & 0xffff) ^ CRC16[(c >> 8) ^ b[i]]; return c; };
+function flacHdr(b, p) { // tamanho do cabeçalho de quadro FLAC válido em p (CRC-8 confere), ou 0
+  if (p + 6 > b.length || b[p] !== 0xff || (b[p + 1] & 0xfe) !== 0xf8) return 0;
+  const bs = b[p + 2] >> 4, sr = b[p + 2] & 15, ch = b[p + 3] >> 4, ss = (b[p + 3] >> 1) & 7;
+  if (bs === 0 || sr === 15 || ch > 10 || ss === 3 || ss === 7 || (b[p + 3] & 1)) return 0;
+  const l = b[p + 4], n = l < 0x80 ? 1 : (l & 0xe0) === 0xc0 ? 2 : (l & 0xf0) === 0xe0 ? 3 : (l & 0xf8) === 0xf0 ? 4 : (l & 0xfc) === 0xf8 ? 5 : (l & 0xfe) === 0xfc ? 6 : l === 0xfe ? 7 : 0; if (!n) return 0;
+  let q = p + 4 + n; if (bs === 6) q += 1; else if (bs === 7) q += 2; if (sr === 12) q += 1; else if (sr === 13 || sr === 14) q += 2;
+  return q < b.length && crc8(b, p, q) === b[q] ? q + 1 - p : 0;
+}
+function flacFrames(b, p0) {
+  let s = p0, n = 0;
+  for (;;) {
+    const h = flacHdr(b, s); if (!h) bad('FLAC com quadro inválido ou dados escondidos entre os quadros');
+    let next = -1;
+    for (let t = s + h + 2; t < b.length - 5 && next < 0; t++) if (b[t] === 0xff && flacHdr(b, t) && crc16(b, s, t - 2) === b.readUInt16BE(t - 2)) next = t;
+    n++;
+    if (next < 0) { if (b.length - s < h + 3 || crc16(b, s, b.length - 2) !== b.readUInt16BE(b.length - 2)) bad('FLAC com dados escondidos depois do último quadro (ou quadro corrompido)'); return n; }
+    if (n > 5e6) bad('FLAC com quadros demais'); s = next;
+  }
 }
 function checkFlac(b) {
   let p = 4, first = true, last = false; const keep = [];
@@ -179,6 +237,7 @@ function checkFlac(b) {
     first = false; p += 4 + len;
   }
   if (p + 2 > b.length || b[p] !== 0xff || (b[p + 1] & 0xfe) !== 0xf8) bad('FLAC sem áudio depois dos metadados');
+  flacFrames(b, p);
   const out = [Buffer.from('fLaC')];
   keep.forEach(([t, body], i) => { const hd = Buffer.alloc(4); hd[0] = t | (i === keep.length - 1 ? 0x80 : 0); hd.writeUIntBE(body.length, 1, 3); out.push(hd, body); });
   out.push(b.subarray(p)); return { buf: Buffer.concat(out) };
@@ -190,7 +249,7 @@ function checkAac(b) {
   while (p < b.length) {
     if (p + 7 > b.length || b[p] !== 0xff || (b[p + 1] & 0xf6) !== 0xf0 || ((b[p + 2] >> 2) & 15) > 12) bad('AAC com dados que não são áudio (dados escondidos ou corrompido)');
     const len = ((b[p + 3] & 3) << 11) | (b[p + 4] << 3) | (b[p + 5] >> 5); if (len < 7) bad('AAC com quadro inválido');
-    if (p + len > b.length) { if (!n) bad('AAC cortado'); p = b.length; n++; break; } p += len; n++;
+    if (p + len > b.length) bad('AAC com último quadro incompleto (cortado ou com dados escondidos no fim)'); p += len; n++;
   }
   if (!n) bad('AAC sem áudio'); return { buf: b.subarray(start) };
 }
@@ -242,7 +301,7 @@ function checkZip(b, o = {}) {
   if (has('[Content_Types].xml')) kind = 'ooxml'; else if (list[0] === 'mimetype' && has('META-INF/manifest.xml')) kind = 'odf';
   for (const nm of list) {
     if (ZIP_BADEXT.test(nm)) bad(`programa/script dentro do arquivo (${nm.slice(0, 50)})`);
-    if (kind === 'ooxml' && (/vbaProject|vbaData|\/macros\/|activeX|\/embeddings\/|oleObject|\.bin$/i.test(nm) && !/printerSettings\d*\.bin$/i.test(nm))) bad(`macro ou objeto embutido no documento (${nm.slice(0, 50)})`);
+    if (kind === 'ooxml' && (/vbaProject|vbaData|\/macros\/|macrosheets\/|dialogsheets\/|activeX|\/embeddings\/|oleObject|\.bin$/i.test(nm) && !/printerSettings\d*\.bin$/i.test(nm))) bad(`macro ou objeto embutido no documento (${nm.slice(0, 50)})`);
     if (kind === 'odf' && /^(Scripts|Basic)\/|\.(class|bin)$/i.test(nm)) bad(`macro dentro do documento (${nm.slice(0, 50)})`);
   }
   if (kind === 'ooxml') {
@@ -271,10 +330,31 @@ function checkOle(b) {
   const dir = []; let s = firstDir, guard = 0;
   while (s < 0xfffffffa && guard++ < 100000) { dir.push(sec(s)); s = fat[s]; if (s === undefined) bad('arquivo do Office antigo com cadeia inválida'); }
   if (!dir.length) bad('arquivo do Office antigo sem diretório');
-  const d = Buffer.concat(dir), names = [];
-  for (let o = 0; o + 128 <= d.length; o += 128) { const nl = d.readUInt16LE(o + 64), ty = d[o + 66]; if (!ty) continue; if (nl < 2 || nl > 64) bad('arquivo do Office antigo com nome inválido'); names.push(d.toString('utf16le', o, o + nl - 2).toLowerCase()); }
+  const d = Buffer.concat(dir), names = [], ents = [];
+  for (let o = 0; o + 128 <= d.length; o += 128) { const nl = d.readUInt16LE(o + 64), ty = d[o + 66]; if (!ty) continue; if (nl < 2 || nl > 64) bad('arquivo do Office antigo com nome inválido'); const nm = d.toString('utf16le', o, o + nl - 2).toLowerCase(); names.push(nm); ents.push({ nm, ty, start: d.readUInt32LE(o + 116), size: d.readUInt32LE(o + 120) }); }
   for (const n of names) if (OLE_BAD.has(n) || /^_vba|^vba|macro|ole10native|objectpool/.test(n)) bad(`macro ou objeto embutido no documento (${n.replace(/[\x00-\x1f]/g, '').slice(0, 30)})`);
   if (!names.length) bad('arquivo do Office antigo vazio');
+  // planilha antiga (xls): lê o fluxo "Workbook" e recusa folha de macro do Excel 4 (XLM), módulo VBA e planilha protegida por senha
+  const wb = ents.find(e => e.ty === 2 && (e.nm === 'workbook' || e.nm === 'book'));
+  if (wb) {
+    if (wb.size > 80 * 1024 * 1024) bad('planilha antiga grande demais');
+    let data;
+    const chain = (start, size, fatArr, secOf) => { const parts = []; let s = start, g = 0; while (s < 0xfffffffa && g++ < 400000) { parts.push(secOf(s)); s = fatArr[s]; if (s === undefined) bad('planilha antiga com cadeia inválida'); } return Buffer.concat(parts).subarray(0, size); };
+    if (wb.size >= b.readUInt32LE(56)) data = chain(wb.start, wb.size, fat, sec);
+    else { // fluxo pequeno: fica no "mini fluxo"
+      const root = ents.find(e => e.ty === 5); if (!root) bad('planilha antiga sem raiz');
+      const mfat = []; let ms = b.readUInt32LE(60), mg = 0; while (ms < 0xfffffffa && mg++ < 100000) { const x = sec(ms); for (let i = 0; i < ss / 4; i++) mfat.push(x.readUInt32LE(i * 4)); ms = fat[ms]; if (ms === undefined) bad('planilha antiga com cadeia inválida'); }
+      const mini = chain(root.start, root.size, fat, sec), msz = 1 << b.readUInt16LE(32); data = chain(wb.start, wb.size, mfat, s => mini.subarray(s * msz, s * msz + msz));
+    }
+    let p = 0, n = 0;
+    while (p + 4 <= data.length && n++ < 3e6) {
+      const id = data.readUInt16LE(p), len = data.readUInt16LE(p + 2); if (p + 4 + len > data.length) break;
+      if (id === 0x002f) bad('planilha antiga protegida por senha (não dá para conferir)');
+      if (id === 0x0085 && len >= 6 && (data[p + 4 + 5] === 1 || data[p + 4 + 5] === 6)) bad('planilha antiga com folha de macro (Excel 4/VBA)');
+      if (id === 0x0809 && len >= 4 && (data.readUInt16LE(p + 4 + 2) === 0x0040)) bad('planilha antiga com folha de macro (Excel 4)');
+      p += 4 + len;
+    }
+  }
   return { buf: b };
 }
 
@@ -338,6 +418,7 @@ function checkDxf(b) {
 }
 function checkDwg(b) {
   if (!/^AC10\d\d$/.test(ascii(b, 0, 6)) || b.length < 100) bad('DWG inválido'); if (b.length > 100 * 1024 * 1024) bad('DWG grande demais');
+  scanOrBad(b, 'DWG', 'long'); // o interior do DWG é comprimido e não é lido; procura só assinaturas longas de programa/PDF/arquivo compactado embutidos
   return { buf: b, kind: 'dwg' };
 }
 
@@ -368,4 +449,16 @@ const CHECKERS = { pdf: checkPdf, wav: checkWav, mp3: checkMp3, ogg: checkOgg, w
 const MIME = { pdf: ['application/pdf', '.pdf'], wav: ['audio/wav', '.wav'], mp3: ['audio/mpeg', '.mp3'], ogg: ['audio/ogg', '.ogg'], webm: ['audio/webm', '.webm'], mp4: ['audio/mp4', '.m4a'], flac: ['audio/flac', '.flac'], aac: ['audio/aac', '.aac'], amr: ['audio/amr', '.amr'],
   ooxml: ['application/vnd.openxmlformats-officedocument', '.docx'], odf: ['application/vnd.oasis.opendocument', '.odt'], zip: ['application/zip', '.zip'], ole: ['application/x-ole-storage', '.doc'], rtf: ['application/rtf', '.rtf'], text: ['text/plain', '.txt'],
   pfx: ['application/x-pkcs12', '.pfx'], der: ['application/pkix-cert', '.cer'], pem: ['application/x-pem-file', '.pem'], dxf: ['application/dxf', '.dxf'], dwg: ['application/acad', '.dwg'] };
-module.exports = { detectDoc, CHECKERS, MIME, checkText };
+// Foto em movimento (Samsung/Google): JPEG + vídeo MP4 colado no fim (e, no Samsung, um bloco SEFH…SEFT). O vídeo é conferido e DESCARTADO:
+// só a foto é guardada. Qualquer outra coisa depois do fim do JPEG continua sendo recusada.
+function motionTrailer(rest) {
+  let mp4 = rest;
+  if (rest.length > 16 && ascii(rest, rest.length - 4, rest.length) === 'SEFT') {
+    const len = rest.readUInt32LE(rest.length - 8), at = rest.length - 8 - len;
+    if (len < 8 || at <= 8 || ascii(rest, at, at + 4) !== 'SEFH') bad('foto com dados escondidos depois do fim da imagem');
+    scanOrBad(rest.subarray(at), 'bloco SEF da foto em movimento', false); mp4 = rest.subarray(0, at);
+  }
+  if (mp4.length < 32 || ascii(mp4, 4, 8) !== 'ftyp') bad(`dados escondidos depois do fim da imagem (${rest.length} bytes)`);
+  checkMp4(mp4, { video: true });
+}
+module.exports = { detectDoc, CHECKERS, MIME, checkText, hooks, motionTrailer };

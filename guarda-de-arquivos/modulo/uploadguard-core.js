@@ -48,7 +48,7 @@ function orientationSegment(o) {
   const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]), len = Buffer.alloc(2); len.writeUInt16BE(body.length + 2);
   return Buffer.concat([Buffer.from([0xff, 0xe1]), len, body]);
 }
-function checkJpeg(b) {
+function checkJpeg(b, o = {}) {
   let p = 2, sof = null, sawSos = false, orient = 1;
   let jfif = null, adobe = null, icc = [];
   const rest = [];
@@ -58,7 +58,7 @@ function checkJpeg(b) {
     while (p < b.length && b[p] === 0xff) p++;
     const m = b[p++];
     if (m === undefined) bad('JPEG cortado');
-    if (m === 0xd9) { if (!sawSos || !sof) bad('JPEG sem imagem'); if (p !== b.length) bad(`dados escondidos depois do fim da imagem (${b.length - p} bytes)`); break; }
+    if (m === 0xd9) { if (!sawSos || !sof) bad('JPEG sem imagem'); if (p !== b.length) { if (o.motion) docs.motionTrailer(b.subarray(p)); else bad(`dados escondidos depois do fim da imagem (${b.length - p} bytes)`); } break; }
     if (m === 0x00 || m === 0x01 || m === 0xd8 || (m >= 0xd0 && m <= 0xd7)) bad('marcador JPEG fora do lugar');
     if (p + 2 > b.length) bad('JPEG cortado');
     const len = b.readUInt16BE(p); if (len < 2 || p + len > b.length) bad('bloco JPEG com tamanho inválido');
@@ -364,7 +364,7 @@ function check(buf, o = {}) {
     const pre = { zip: ['ooxml', 'odf', 'zip'], der: ['pfx', 'der'] }[kind] || [kind];
     if (!pre.some(k => allow.has(k))) bad(`${LABEL[kind] ? LABEL[kind][0].toUpperCase() + LABEL[kind].slice(1) : 'Este tipo de arquivo'} não é aceito aqui`);
     let r;
-    if (kind === 'jpeg') r = checkJpeg(buf); else if (kind === 'png') r = checkPng(buf); else if (kind === 'gif') r = checkGif(buf);
+    if (kind === 'jpeg') r = checkJpeg(buf, { motion: true }); else if (kind === 'png') r = checkPng(buf); else if (kind === 'gif') r = checkGif(buf);
     else if (kind === 'webp') r = checkWebp(buf); else if (kind === 'heic') r = checkHeic(buf);
     else if (kind === 'svg') r = checkXml(buf, { profile: 'svg' });
     else if (kind === 'xml') r = checkXml(buf, { profile: o.profile || 'xml' });
@@ -379,4 +379,5 @@ function check(buf, o = {}) {
   }
 }
 
+docs.hooks.jpeg = checkJpeg; // PDF usa o mesmo leitor para as fotos que carrega
 module.exports = { check, detect, detectAny, checkXml, scanSig, KINDS, IMAGE_KINDS, PRESETS, LABEL, AUDIO, Bad };
