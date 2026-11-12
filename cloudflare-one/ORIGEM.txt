@@ -1,0 +1,1 @@
+Origem: https://github.com/cloudflare/skills (commit cbf893b, 10/11/2026), licença em LICENSE-cloudflare-skills. Auditada com /skill-security-auditor em 12/11/2026: sem scripts, sem rede; 1 alerta falso por skill (texto que manda NÃO imprimir segredos).

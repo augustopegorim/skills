@@ -12,6 +12,8 @@ Skills usadas em todos os projetos. Toda skill de terceiros entra **só depois d
 | `publicar` | `/publicar` | **Projeto Patrimônio:** do código pronto ao sistema no ar (conferir, testar, diário, commit, push, deploy, verificar, relatório). Só o Augusto chama |
 | `novo-teste` | `/novo-teste` | **Projeto Patrimônio:** cria teste de API/tela (inclusive em tela de celular) no padrão de `zima/testes`, com modelo pronto e as lições aprendidas |
 | `guarda-de-arquivos` | `/guarda-de-arquivos` | **Qualquer sistema Node/Express que recebe arquivo:** guarda que lê foto, PDF, áudio, Office, XML, texto, certificado e CAD num processo isolado e descarta o que tiver algo além do esperado (módulo pronto em `modulo/`, com testes) |
+| `cloudflare` | automática (`/cloudflare`) | Escolher produto Cloudflare e **diagnosticar erro de site pela Cloudflare (52x, 1xxx, 403)**; referências de Tunnel, WAF, cron, R2, D1… (terceiros: cloudflare/skills, Apache-2.0, auditada) |
+| `cloudflare-one` | automática | Zero Trust / Access / túnel: projetar, configurar e diagnosticar (ligada à proteção "só com VPN" do patrimoniocode.com) (terceiros: cloudflare/skills, auditada) |
 
 ## Instalar
 
