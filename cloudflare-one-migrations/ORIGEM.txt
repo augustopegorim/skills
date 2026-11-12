@@ -1,0 +1,1 @@
+Origem: https://github.com/cloudflare/skills (commit cbf893b, 10/11/2026), licença Apache-2.0 em LICENSE-cloudflare-skills. Auditada com /skill-security-auditor em 12/11/2026.

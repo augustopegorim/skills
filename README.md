@@ -14,6 +14,7 @@ Skills usadas em todos os projetos. Toda skill de terceiros entra **só depois d
 | `guarda-de-arquivos` | `/guarda-de-arquivos` | **Qualquer sistema Node/Express que recebe arquivo:** guarda que lê foto, PDF, áudio, Office, XML, texto, certificado e CAD num processo isolado e descarta o que tiver algo além do esperado (módulo pronto em `modulo/`, com testes) |
 | `cloudflare` | automática (`/cloudflare`) | Escolher produto Cloudflare e **diagnosticar erro de site pela Cloudflare (52x, 1xxx, 403)**; referências de Tunnel, WAF, cron, R2, D1… (terceiros: cloudflare/skills, Apache-2.0, auditada) |
 | `cloudflare-one` | automática | Zero Trust / Access / túnel: projetar, configurar e diagnosticar (ligada à proteção "só com VPN" do patrimoniocode.com) (terceiros: cloudflare/skills, auditada) |
+| `wrangler`, `workers-development`, `workers-best-practices`, `workers-profiling`, `cloudflare-app-bootstrap`, `frameworks-on-cloudflare`, `nextjs-on-cloudflare`, `durable-objects`, `agents-sdk`, `sandbox-stable`, `sandbox-next`, `sandbox-migrate-to-next`, `basin`, `k2`, `gateway-workers`, `cloudflare-email-service`, `cloudflare-one-migrations`, `cf-cli`, `turnstile-spin`, `web-perf` | automáticas | **Para projetos futuros na Cloudflare** (Workers, Durable Objects, agentes, sandbox, Next.js, e-mail, anti-robô Turnstile, desempenho de site, migração de VPN). Não usadas no Patrimônio hoje. Terceiros: cloudflare/skills, Apache-2.0, auditadas (`ORIGEM.txt` em cada pasta) |
 
 ## Instalar
 
