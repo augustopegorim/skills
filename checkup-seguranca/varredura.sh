@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Varredura automática do checkup de segurança. Uso: bash varredura.sh [pasta-do-app]   (padrão: pasta atual)
 # Cada bloco impresso é SUSPEITA, não falha: abra só a linha apontada e decida.
+SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SKILLDIR/bin:$PATH:$(go env GOPATH 2>/dev/null)/bin"   # ferramentas copiadas para a pasta da skill (bin/) ou instaladas com instalar-ferramentas.sh
 cd "${1:-.}" || exit 1
 # LIMITE=n muda quantos achados aparecem por bloco (padrão 60; se um bloco chegar no limite, rode de novo com LIMITE maior)
 # Documentação (*.md) só entra na busca de segredos (gs); o resto olha só código.
